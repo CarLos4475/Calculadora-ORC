@@ -277,21 +277,6 @@ La aplicación rechaza y muestra mensajes específicos en los siguientes casos:
 
 El proyecto está configurado para deploy automático en [Render](https://render.com) usando **Blueprint** (archivo `render.yaml`).
 
-### Pasos
-
-1. Fork o clona este repositorio en tu cuenta de GitHub
-2. En Render, ve a **New + → Blueprint**
-3. Conecta tu repositorio
-4. Render detectará el `render.yaml` y configurará el servicio
-5. Espera ~2-3 minutos (instala CoolProp)
-6. Tu app quedará disponible en una URL tipo `https://calculadora-orc-xxxx.onrender.com`
-
-### Notas sobre el plan gratuito
-
-- El servicio se "duerme" tras 15 minutos sin tráfico
-- El primer request tras el sleep tarda ~30 segundos (cold start)
-- 750 horas/mes de tiempo de cómputo
-
 ---
 
 ## Dependencias
@@ -303,12 +288,6 @@ CoolProp>=6.6.0
 numpy>=1.26.0
 pydantic>=2.0.0
 ```
-
----
-
-## Autores
-
-- **CarLos4475** — [GitHub](https://github.com/CarLos4475)
 
 ---
 
