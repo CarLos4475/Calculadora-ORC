@@ -212,22 +212,3 @@ Antes de hacer cualquier cálculo, el servidor revisa que los datos tengan senti
 | Un fluido que no existe | "Fluido no válido. Opciones: R245fa, R134a, R1233zd(E)" |
 
 Cada error se muestra en rojo justo abajo del campo que tiene el problema, así el usuario sabe exactamente qué corregir.
-
----
-
-## ¿Y cómo se pone en internet?
-
-El proyecto usa **Render**, que es como un "alojamiento" gratuito para aplicaciones web.
-
-1. El código está en **GitHub** (el repo `CarLos4475/Calculadora-ORC`).
-2. El archivo `render.yaml` le dice a Render: "instala estas dependencias, arranca este comando, expón esto en internet".
-3. Cada vez que subimos cambios a GitHub, Render detecta el cambio y vuelve a desplegar automáticamente.
-4. La app queda en una URL tipo `https://calculadora-orc-xxxx.onrender.com`.
-
-El plan gratuito de Render "duerme" el servidor tras 15 minutos sin uso (para no gastar recursos), así que el primer request después de un rato tarda unos 30 segundos. Los siguientes son instantáneos.
-
----
-
-## Resumen en una frase
-
-> Es una calculadora web donde metes condiciones de operación, Python + CoolProp hacen los cálculos termodinámicos del ciclo, y el navegador te muestra la potencia generada más una gráfica T-s interactiva, todo validado y desplegado en internet.
