@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="es"><head><script data-od-sandbox-shim="">(function(){
+  function makeStore(){
+    var data = {};
+    var api = {
+      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function(k, v){ data[k] = String(v); },
+      removeItem: function(k){ delete data[k]; },
+      clear: function(){ data = {}; },
+      key: function(i){ return Object.keys(data)[i] || null; }
+    };
+    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
+    return api;
+  }
+  function tryShim(name){
+    var works = false;
+    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
+    catch (_) { works = false; }
+    if (works) return;
+    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
+    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
+  }
+  tryShim('localStorage');
+  tryShim('sessionStorage');
+  document.addEventListener('click', (e) => {
+    if (!e.target || !(e.target instanceof Element)) return;
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href');
+    if (href === null) return;
+    var isAnchor = href.startsWith('#') || href === '';
+    if (isAnchor) {
+      e.preventDefault();
+      if (href === '' || href === '#') {
+        window.scrollTo({ top: 0 });
+        history.replaceState(null, '', ' ');
+      } else {
+        var targetId = href.slice(1);
+        var target = targetId ? document.getElementById(targetId) : null;
+        if (target) {
+          target.scrollIntoView();
+          location.hash === href && history.replaceState(null, '', ' ');
+          location.hash = href;
+        }
+      }
+    } else if (link.getAttribute('target') === '_blank') {
+      e.preventDefault();
+      let safe = false;
+      try {
+        var url = new URL(href, location.href);
+        safe =
+          url.protocol === 'http:' ||
+          url.protocol === 'https:' ||
+          url.protocol === 'mailto:';
+      } catch (_) {}
+      safe && window.open(href, '_blank', 'noopener,noreferrer');
+    }
+  });
+})();</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ciclo Rankine Orgánico — ORC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1',
+              400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155',
+              800: '#1e293b', 900: '#0f172a', 950: '#020617',
+            },
+            accent: { 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px;
+      background: #e2e8f0; outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 18px; height: 18px;
+      border-radius: 50%; background: #2563eb; cursor: pointer; border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 18px; height: 18px; border-radius: 50%; background: #2563eb;
+      cursor: pointer; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .spinner {
+      border: 3px solid rgba(255,255,255,0.3); border-top-color: #fff;
+      border-radius: 50%; width: 18px; height: 18px; animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .result-card { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); }
+  </style>
+<style data-od-tweaks-bridge-style="">
+[data-od-tweaks-hidden] .tw-panel {
+  transform: translateX(calc(100% + 32px)) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.tw-restore { display: none !important; }
+</style><script data-od-tweaks-bridge="">(function(){
+  // Synchronously hide BEFORE the artifact body parses so the panel never
+  // flashes on initial paint. The host removes the attribute via postMessage
+  // once it knows the desired state.
+  document.documentElement.setAttribute('data-od-tweaks-hidden', '');
+
+  var suppressEcho = false;
+  var observer = null;
+
+  function panelEl(){ return document.querySelector('.tw-panel'); }
+
+  function applyClassesToPanel(visible){
+    var panel = panelEl();
+    if (panel) panel.classList.toggle('tw-hidden', !visible);
+  }
+
+  function setPanelVisible(visible){
+    suppressEcho = true;
+    document.documentElement.toggleAttribute('data-od-tweaks-hidden', !visible);
+    applyClassesToPanel(visible);
+    // Clear flag after the MutationObserver has had a chance to fire for this
+    // change so we don't echo our own host-driven toggles back to the host.
+    Promise.resolve().then(function(){ suppressEcho = false; });
+  }
+
+  function postState(){
+    var panel = panelEl();
+    if (!panel) return;
+    try {
+      parent.postMessage({
+        type: 'od:tweaks-panel-state',
+        visible: !panel.classList.contains('tw-hidden'),
+      }, '*');
+    } catch (e) {}
+  }
+
+  function postAvailability(){
+    try {
+      parent.postMessage({
+        type: 'od:tweaks-available',
+        available: !!panelEl(),
+      }, '*');
+    } catch (e) {}
+  }
+
+  function attachObserver(){
+    var panel = panelEl();
+    if (!panel || observer) return;
+    observer = new MutationObserver(function(){
+      if (suppressEcho) return;
+      postState();
+    });
+    observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  function onReady(){
+    // Capture the panel authored visibility BEFORE we apply the host hidden
+    // attribute. The bridge sets data-od-tweaks-hidden synchronously in head
+    // (before the body parses), so on entry to onReady the attribute is
+    // always present even though the artifact may have authored the panel
+    // as default-visible. Reading the panel class first is the only place
+    // we can still observe the author intent. Then drive the attribute,
+    // classes, and posted state from that captured value so a default
+    // visible tw-panel reports visible:true and the toolbar toggle starts
+    // ON. Issue surfaced in PR #1643 review.
+    var panel = panelEl();
+    var initialVisible = !!panel && !panel.classList.contains('tw-hidden');
+    document.documentElement.toggleAttribute('data-od-tweaks-hidden', !initialVisible);
+    applyClassesToPanel(initialVisible);
+    attachObserver();
+    postAvailability();
+    // Post the captured initial visibility so the toolbar toggle reflects
+    // the default state on mount. Without this the toggle reads OFF while
+    // a default-visible tw-panel artifact clearly shows its panel and the
+    // user would have to click toggle-on then toggle-off to actually hide.
+    postState();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onReady);
+  } else {
+    onReady();
+  }
+
+  window.addEventListener('message', function(ev){
+    if (!ev.data || ev.data.type !== 'od:tweaks-panel-visible') return;
+    setPanelVisible(!!ev.data.visible);
+  });
+})();</script></head>
+<body class="bg-gray-50 text-primary-800 min-h-screen">
+  <header class="bg-primary-800 text-white shadow-lg" data-od-id="path-0">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4" data-od-id="path-0-0">
+      <div class="flex items-center gap-3">
+        <svg class="w-8 h-8 text-accent-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"></path>
+        </svg>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight" data-od-id="path-0-0-0-1-0">Ciclo Rankine Orgánico — ORC</h1>
+          <p class="text-primary-300 text-sm">Calculadora termodinámica</p>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8" data-od-id="path-1">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8" data-od-id="path-1-0">
+      <!-- Left: Form -->
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6" data-od-id="path-1-0-0">
+        <h2 class="text-lg font-semibold text-primary-800 mb-5 flex items-center gap-2" data-od-id="path-1-0-0-0">
+          <svg class="w-5 h-5 text-accent-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+          Parámetros de entrada
+        </h2>
+        <form id="orc-form" class="space-y-5" novalidate="" data-od-id="path-1-0-0-1">
+          <div>
+            <label for="fluido" class="block text-sm font-medium text-primary-700 mb-1.5">Fluido de trabajo</label>
+            <select id="fluido" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 outline-none transition" data-od-id="path-1-0-0-1-0-1">
+              <option value="R245fa">R245fa</option>
+              <option value="R134a">R134a</option>
+              <option value="R1233zd(E)">R1233zd(E)</option>
+            </select>
+          </div>
+          <div>
+            <label for="p_entrada" class="block text-sm font-medium text-primary-700 mb-1.5">Presión entrada turbina <span class="text-primary-400">[kPa]</span></label>
+            <input type="number" id="p_entrada" step="any" min="10" required="" class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 outline-none transition" placeholder="ej. 500" data-od-id="path-1-0-0-1-1-1">
+            <p id="err-p_entrada" class="text-red-600 text-xs mt-1 hidden" data-od-id="path-1-0-0-1-1-2"></p>
+          </div>
+          <div>
+            <label for="t_entrada" class="block text-sm font-medium text-primary-700 mb-1.5">Temperatura entrada turbina <span class="text-primary-400">[°C]</span></label>
+            <input type="number" id="t_entrada" step="any" class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 outline-none transition" placeholder="ej. 180" data-od-id="path-1-0-0-1-2-1">
+            <p id="err-t_entrada" class="text-red-600 text-xs mt-1 hidden" data-od-id="path-1-0-0-1-2-2"></p>
+          </div>
+          <div>
+            <label for="p_salida" class="block text-sm font-medium text-primary-700 mb-1.5">Presión salida turbina <span class="text-primary-400">[kPa]</span></label>
+            <input type="number" id="p_salida" step="any" min="0.1" required="" class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 outline-none transition" placeholder="ej. 200" data-od-id="path-1-0-0-1-3-1">
+            <p id="err-p_salida" class="text-red-600 text-xs mt-1 hidden" data-od-id="path-1-0-0-1-3-2"></p>
+          </div>
+          <div>
+            <label for="eficiencia_turbina" class="block text-sm font-medium text-primary-700 mb-1.5">
+              Eficiencia isentrópica turbina <span class="text-primary-400">[%]</span>
+              <span id="val-eficiencia_turbina" class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent-500/10 text-accent-700" data-od-id="path-1-0-0-1-4-0-1">85</span>
+            </label>
+            <input type="range" id="slider-eficiencia_turbina" min="0" max="100" step="1" value="85" class="flex-1 w-full" data-od-id="path-1-0-0-1-4-1">
+            <input type="number" id="eficiencia_turbina" min="0" max="100" step="1" value="85" class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 outline-none transition" data-od-id="path-1-0-0-1-4-2">
+            <p id="err-eficiencia_turbina" class="text-red-600 text-xs mt-1 hidden" data-od-id="path-1-0-0-1-4-3"></p>
+          </div>
+          <div>
+            <label for="eficiencia_bomba" class="block text-sm font-medium text-primary-700 mb-1.5">
+              Eficiencia isentrópica bomba <span class="text-primary-400">[%]</span>
+              <span id="val-eficiencia_bomba" class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent-500/10 text-accent-700" data-od-id="path-1-0-0-1-5-0-1">75</span>
+            </label>
+            <input type="range" id="slider-eficiencia_bomba" min="0" max="100" step="1" value="75" class="flex-1 w-full" data-od-id="path-1-0-0-1-5-1">
+            <input type="number" id="eficiencia_bomba" min="0" max="100" step="1" value="75" class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 outline-none transition" data-od-id="path-1-0-0-1-5-2">
+            <p id="err-eficiencia_bomba" class="text-red-600 text-xs mt-1 hidden" data-od-id="path-1-0-0-1-5-3"></p>
+          </div>
+          <div>
+            <label for="gasto_masico" class="block text-sm font-medium text-primary-700 mb-1.5">Gasto másico <span class="text-primary-400">[kg/s]</span></label>
+            <input type="number" id="gasto_masico" step="any" min="0.01" required="" class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 outline-none transition" placeholder="ej. 1.5" data-od-id="path-1-0-0-1-6-1">
+            <p id="err-gasto_masico" class="text-red-600 text-xs mt-1 hidden" data-od-id="path-1-0-0-1-6-2"></p>
+          </div>
+          <button type="submit" id="btn-calcular" class="w-full bg-accent-600 hover:bg-accent-700 text-white font-semibold py-3 px-6 rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed shadow-sm" data-od-id="path-1-0-0-1-7">
+            <span id="btn-text" data-od-id="path-1-0-0-1-7-0">CALCULAR</span>
+            <span id="btn-spinner" class="spinner hidden" data-od-id="path-1-0-0-1-7-1"></span>
+          </button>
+        </form>
+      </section>
+      <!-- Right: Results -->
+      <section class="space-y-6" data-od-id="path-1-0-1">
+        <div class="result-card rounded-xl shadow-lg p-6 text-white" data-od-id="path-1-0-1-0">
+          <p class="text-primary-300 text-sm font-medium uppercase tracking-wider">Potencia neta</p>
+          <p id="potencia-neta" class="text-4xl lg:text-5xl font-bold font-mono mt-2" data-od-id="path-1-0-1-0-1">— <span class="text-2xl text-primary-300 font-normal">kW</span></p>
+          <div class="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-white/10">
+            <div><p class="text-primary-300 text-xs">Potencia turbina</p><p id="potencia-turbina" class="text-xl font-mono font-semibold" data-od-id="path-1-0-1-0-2-0-1">— <span class="text-sm text-primary-400">kW</span></p></div>
+            <div><p class="text-primary-300 text-xs">Potencia bomba</p><p id="potencia-bomba" class="text-xl font-mono font-semibold" data-od-id="path-1-0-1-0-2-1-1">— <span class="text-sm text-primary-400">kW</span></p></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" data-od-id="path-1-0-1-1">
+          <div class="px-5 py-3 border-b border-gray-100 bg-gray-50"><h3 class="text-sm font-semibold text-primary-700" data-od-id="path-1-0-1-1-0-0">Estados termodinámicos</h3></div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="border-b border-gray-200 bg-gray-50/50">
+                <th class="px-4 py-2.5 text-left font-semibold text-primary-600 text-xs uppercase tracking-wider">Estado</th>
+                <th class="px-4 py-2.5 text-right font-semibold text-primary-600 text-xs uppercase tracking-wider">P <span class="normal-case text-primary-400">[MPa]</span></th>
+                <th class="px-4 py-2.5 text-right font-semibold text-primary-600 text-xs uppercase tracking-wider">T <span class="normal-case text-primary-400">[°C]</span></th>
+                <th class="px-4 py-2.5 text-right font-semibold text-primary-600 text-xs uppercase tracking-wider">h <span class="normal-case text-primary-400">[kJ/kg]</span></th>
+                <th class="px-4 py-2.5 text-right font-semibold text-primary-600 text-xs uppercase tracking-wider">s <span class="normal-case text-primary-400">[kJ/kg·K]</span></th>
+                <th class="px-4 py-2.5 text-right font-semibold text-primary-600 text-xs uppercase tracking-wider">x</th>
+              </tr></thead>
+              <tbody id="states-table" class="font-mono text-xs" data-od-id="path-1-0-1-1-1-0-1">
+                <tr class="border-b border-gray-100 hover:bg-gray-50/50"><td class="px-4 py-2.5 font-sans font-semibold text-primary-700">1</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td></tr>
+                <tr class="border-b border-gray-100 hover:bg-gray-50/50"><td class="px-4 py-2.5 font-sans font-semibold text-primary-700">2s</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td></tr>
+                <tr class="border-b border-gray-100 hover:bg-gray-50/50"><td class="px-4 py-2.5 font-sans font-semibold text-primary-700">2</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td></tr>
+                <tr class="border-b border-gray-100 hover:bg-gray-50/50"><td class="px-4 py-2.5 font-sans font-semibold text-primary-700">3</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td></tr>
+                <tr class="border-b border-gray-100 hover:bg-gray-50/50"><td class="px-4 py-2.5 font-sans font-semibold text-primary-700">4s</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td></tr>
+                <tr class="hover:bg-gray-50/50"><td class="px-4 py-2.5 font-sans font-semibold text-primary-700">4</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td><td class="px-4 py-2.5 text-right text-primary-500">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4" data-od-id="path-1-0-1-2">
+          <h3 class="text-sm font-semibold text-primary-700 mb-3" data-od-id="path-1-0-1-2-0">Diagrama T-s</h3>
+          <div id="ts-chart" class="w-full" style="min-height: 380px;" data-od-id="path-1-0-1-2-1"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script>
+    (function () {
+      'use strict';
+      var form = document.getElementById('orc-form');
+      var btnCalcular = document.getElementById('btn-calcular');
+      var btnText = document.getElementById('btn-text');
+      var btnSpinner = document.getElementById('btn-spinner');
+      var fluidoSelect = document.getElementById('fluido');
+
+      function syncSlider(sliderId, inputId, displayId) {
+        var slider = document.getElementById(sliderId);
+        var input = document.getElementById(inputId);
+        var display = document.getElementById(displayId);
+        slider.addEventListener('input', function () { input.value = slider.value; display.textContent = slider.value; });
+        input.addEventListener('input', function () { var v = parseInt(input.value, 10); if (!isNaN(v) && v >= 0 && v <= 100) { slider.value = v; display.textContent = v; } });
+      }
+      syncSlider('slider-eficiencia_turbina', 'eficiencia_turbina', 'val-eficiencia_turbina');
+      syncSlider('slider-eficiencia_bomba', 'eficiencia_bomba', 'val-eficiencia_bomba');
+
+      function fmt2(v) { if (v === null || v === undefined || isNaN(v)) return '—'; return Number(v).toFixed(2); }
+      function fmtX(v) { if (v === null || v === undefined) return '—'; return Number(v).toFixed(2); }
+
+      function clearErrors() {
+        var errs = document.querySelectorAll('[id^="err-"]');
+        for (var i = 0; i < errs.length; i++) { errs[i].classList.add('hidden'); errs[i].textContent = ''; }
+      }
+      function showErrors(details) {
+        clearErrors();
+        for (var i = 0; i < details.length; i++) {
+          var d = details[i], loc = d.loc;
+          if (loc && loc.length >= 2) {
+            var field = loc[1], errEl = document.getElementById('err-' + field);
+            if (errEl) { errEl.textContent = d.msg; errEl.classList.remove('hidden'); }
+          }
+        }
+      }
+      function setLoading(loading) {
+        btnCalcular.disabled = loading;
+        if (loading) { btnText.textContent = 'Calculando...'; btnSpinner.classList.remove('hidden'); }
+        else { btnText.textContent = 'CALCULAR'; btnSpinner.classList.add('hidden'); }
+      }
+
+      var API_BASE = '';
+      var saturationData = null;
+
+      async function loadSaturationDome(fluido) {
+        try {
+          var resp = await fetch(API_BASE + '/diagrama/' + encodeURIComponent(fluido));
+          if (!resp.ok) return;
+          saturationData = await resp.json();
+          renderTsChart(null);
+        } catch (e) { console.warn('No se pudo cargar la campana:', e); }
+      }
+
+      function renderTsChart(estados) {
+        var traces = [];
+        if (saturationData && saturationData.saturacion) {
+          var sat = saturationData.saturacion;
+          traces.push({ x: sat.liquido.s, y: sat.liquido.T, mode: 'lines', name: 'Líquido saturado', line: { color: '#94a3b8', width: 1.5 }, hoverinfo: 'skip' });
+          traces.push({ x: sat.vapor.s, y: sat.vapor.T, mode: 'lines', name: 'Vapor saturado', line: { color: '#94a3b8', width: 1.5 }, fill: 'tozeroy', fillcolor: 'rgba(148,163,184,0.08)', hoverinfo: 'skip' });
+        }
+        if (estados) {
+          var lines = [
+            { a: '1', b: '2s', name: '1→2s (isentrópica)', color: '#22c55e', dash: 'dash' },
+            { a: '1', b: '2', name: '1→2 (real)', color: '#ef4444', dash: 'solid' },
+            { a: '3', b: '4s', name: '3→4s (isentrópica)', color: '#22c55e', dash: 'dash' },
+            { a: '3', b: '4', name: '3→4 (real)', color: '#3b82f6', dash: 'solid' },
+            { a: '4', b: '1', name: '4→1 (evaporación)', color: '#f97316', dash: 'solid' },
+            { a: '2', b: '3', name: '2→3 (condensación)', color: '#06b6d4', dash: 'solid' }
+          ];
+          for (var i = 0; i < lines.length; i++) {
+            var l = lines[i], sa = estados[l.a], sb = estados[l.b];
+            if (sa && sb) traces.push({ x: [sa.s, sb.s], y: [sa.T, sb.T], mode: 'lines', name: l.name, line: { color: l.color, width: l.dash === 'dash' ? 2 : 2.5, dash: l.dash }, hoverinfo: 'skip' });
+          }
+          var pts = { '1': { c: '#1e293b', l: '1 — Entrada turbina' }, '2s': { c: '#22c55e', l: '2s — Salida isentrópica' }, '2': { c: '#ef4444', l: '2 — Salida real' }, '3': { c: '#1e293b', l: '3 — Entrada bomba' }, '4s': { c: '#22c55e', l: '4s — Salida isentrópica bomba' }, '4': { c: '#3b82f6', l: '4 — Salida real bomba' } };
+          var order = ['1', '2s', '2', '3', '4s', '4'];
+          for (var j = 0; j < order.length; j++) {
+            var k = order[j], st = estados[k];
+            if (st && st.s !== null && st.T !== null) traces.push({ x: [st.s], y: [st.T], mode: 'markers+text', name: pts[k].l, marker: { size: 10, color: pts[k].c, line: { color: '#fff', width: 2 } }, text: [k], textposition: 'top right', textfont: { size: 13, color: pts[k].c, family: 'JetBrains Mono, monospace' }, hovertemplate: '<b>Estado ' + k + '</b><br>T: %{y:.1f} °C<br>s: %{x:.3f} kJ/kg·K<br>P: ' + fmt2(st.P) + ' MPa<br>h: ' + fmt2(st.h) + ' kJ/kg<br>x: ' + fmtX(st.x) + '<extra></extra>' });
+          }
+        }
+        Plotly.newPlot('ts-chart', traces, {
+          margin: { t: 10, r: 10, b: 45, l: 55 },
+          xaxis: { title: { text: 's [kJ/kg·K]', font: { size: 12 } }, gridcolor: '#e2e8f0', tickfont: { size: 11, family: 'JetBrains Mono, monospace' } },
+          yaxis: { title: { text: 'T [°C]', font: { size: 12 } }, gridcolor: '#e2e8f0', tickfont: { size: 11, family: 'JetBrains Mono, monospace' } },
+          showlegend: true, legend: { orientation: 'h', y: -0.22, x: 0.5, xanchor: 'center', font: { size: 10 }, bgcolor: 'rgba(255,255,255,0.8)' },
+          paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: 'Inter, system-ui, sans-serif' }, hovermode: 'closest',
+          config: { displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'], displaylogo: false, responsive: true }
+        }, { responsive: true });
+      }
+
+      function updateResults(estados, pt, pb, pn) {
+        var tbody = document.getElementById('states-table');
+        var order = ['1', '2s', '2', '3', '4s', '4'];
+        var html = '';
+        for (var i = 0; i < order.length; i++) {
+          var k = order[i], st = estados[k]; if (!st) continue;
+          var rc = (k === '2' || k === '4') ? 'bg-red-50/40' : ((k === '2s' || k === '4s') ? 'bg-green-50/40' : '');
+          var lc = (k === '2' || k === '4') ? 'text-red-700' : ((k === '2s' || k === '4s') ? 'text-green-700' : 'text-primary-700');
+          html += '<tr class="border-b border-gray-100 hover:bg-gray-50/50 ' + rc + '"><td class="px-4 py-2.5 font-sans font-semibold ' + lc + '">' + k + '</td><td class="px-4 py-2.5 text-right">' + fmt2(st.P) + '</td><td class="px-4 py-2.5 text-right">' + fmt2(st.T) + '</td><td class="px-4 py-2.5 text-right">' + fmt2(st.h) + '</td><td class="px-4 py-2.5 text-right">' + fmt2(st.s) + '</td><td class="px-4 py-2.5 text-right">' + fmtX(st.x) + '</td></tr>';
+        }
+        tbody.innerHTML = html;
+        document.getElementById('potencia-turbina').innerHTML = fmt2(pt) + ' <span class="text-sm text-primary-400">kW</span>';
+        document.getElementById('potencia-bomba').innerHTML = fmt2(pb) + ' <span class="text-sm text-primary-400">kW</span>';
+        document.getElementById('potencia-neta').innerHTML = fmt2(pn) + ' <span class="text-2xl text-primary-300 font-normal">kW</span>';
+      }
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault(); clearErrors();
+        var payload = {
+          fluido: fluidoSelect.value,
+          p_entrada: parseFloat(document.getElementById('p_entrada').value),
+          t_entrada: parseFloat(document.getElementById('t_entrada').value),
+          p_salida: parseFloat(document.getElementById('p_salida').value),
+          eficiencia_turbina: parseFloat(document.getElementById('eficiencia_turbina').value),
+          eficiencia_bomba: parseFloat(document.getElementById('eficiencia_bomba').value),
+          gasto_masico: parseFloat(document.getElementById('gasto_masico').value)
+        };
+        setLoading(true);
+        try {
+          var resp = await fetch(API_BASE + '/calcular', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          if (!resp.ok) {
+            if (resp.status === 422) { var d = await resp.json(); if (d.detail) showErrors(d.detail); else alert('Error de validación'); }
+            else alert('Error del servidor: ' + resp.status);
+            return;
+          }
+          var result = await resp.json();
+          updateResults(result.estados, result.potencia_turbina, result.potencia_bomba, result.potencia_neta);
+          renderTsChart(result.estados);
+        } catch (err) { alert('Error de conexión: ' + err.message); }
+        finally { setLoading(false); }
+      });
+
+      fluidoSelect.addEventListener('change', function () { loadSaturationDome(fluidoSelect.value); });
+      loadSaturationDome(fluidoSelect.value);
+    })();
+  </script>
+
+
+<script data-od-snapshot-bridge="">(function(){
+  var SNAPSHOT_STYLE_PROPS = [
+    'display','position','box-sizing','width','height','min-width','max-width','min-height','max-height',
+    'margin','margin-top','margin-right','margin-bottom','margin-left',
+    'padding','padding-top','padding-right','padding-bottom','padding-left',
+    'border','border-top','border-right','border-bottom','border-left','border-radius',
+    'font','font-family','font-size','font-weight','font-style','line-height','letter-spacing',
+    'color','background-color','opacity','transform','transform-origin','overflow','overflow-x','overflow-y',
+    'white-space','text-align','vertical-align','object-fit','object-position',
+    'flex','flex-direction','flex-wrap','flex-grow','flex-shrink','flex-basis',
+    'grid','grid-template-columns','grid-template-rows','grid-column','grid-row',
+    'gap','row-gap','column-gap','align-items','align-content','align-self',
+    'justify-items','justify-content','justify-self','inset','top','right','bottom','left',
+    'z-index','box-shadow','text-shadow'
+  ];
+  function copyComputedStyle(source, target){
+    if (!source || !target || source.nodeType !== 1 || target.nodeType !== 1) return;
+    var computed = window.getComputedStyle(source);
+    var style = target.getAttribute('style') || '';
+    for (var i = 0; i < SNAPSHOT_STYLE_PROPS.length; i++){
+      var prop = SNAPSHOT_STYLE_PROPS[i];
+      var value = computed.getPropertyValue(prop);
+      if (value) style += prop + ':' + value + ';';
+    }
+    target.setAttribute('style', style);
+  }
+  function syncElementState(source, target){
+    var tag = source.tagName ? source.tagName.toLowerCase() : '';
+    if (tag === 'img' && source.currentSrc) target.setAttribute('src', source.currentSrc);
+    if (tag === 'input' || tag === 'textarea') target.setAttribute('value', source.value || '');
+    if (tag === 'canvas') {
+      try {
+        var img = document.createElement('img');
+        img.setAttribute('src', source.toDataURL('image/png'));
+        img.setAttribute('style', target.getAttribute('style') || '');
+        target.parentNode && target.parentNode.replaceChild(img, target);
+      } catch (_) {}
+    }
+  }
+  function inlineSnapshotStyles(originalRoot, cloneRoot){
+    copyComputedStyle(originalRoot, cloneRoot);
+    syncElementState(originalRoot, cloneRoot);
+    var originals = originalRoot.querySelectorAll('*');
+    var clones = cloneRoot.querySelectorAll('*');
+    var count = Math.min(originals.length, clones.length, 3500);
+    for (var i = 0; i < count; i++){
+      copyComputedStyle(originals[i], clones[i]);
+      syncElementState(originals[i], clones[i]);
+    }
+    var scripts = cloneRoot.querySelectorAll('script');
+    for (var s = scripts.length - 1; s >= 0; s--) scripts[s].remove();
+    var links = cloneRoot.querySelectorAll('link[rel~="stylesheet"], link[rel~="preload"], link[rel~="preconnect"]');
+    for (var l = links.length - 1; l >= 0; l--) links[l].remove();
+    var styles = cloneRoot.querySelectorAll('style');
+    for (var st = 0; st < styles.length; st++) {
+      styles[st].textContent = (styles[st].textContent || '')
+        .replace(/@import[^;]+;/gi, '')
+        .replace(/@font-face\s*\{[^}]*\}/gi, '');
+    }
+  }
+  function waitForImages(){
+    var imgs = Array.prototype.slice.call(document.images || []);
+    return Promise.all(imgs.map(function(img){
+      if (img.complete) return Promise.resolve();
+      return new Promise(function(resolve){
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      });
+    }));
+  }
+  function scrollOffset(){
+    var doc = document.documentElement;
+    var body = document.body;
+    return {
+      x: Math.max(window.scrollX || 0, doc ? doc.scrollLeft || 0 : 0, body ? body.scrollLeft || 0 : 0),
+      y: Math.max(window.scrollY || 0, doc ? doc.scrollTop || 0 : 0, body ? body.scrollTop || 0 : 0)
+    };
+  }
+  function escapeAttribute(value){
+    return String(value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+  function renderSnapshot(id){
+    var w = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    var h = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    var dpr = window.devicePixelRatio || 1;
+    var docW = Math.max(w, document.documentElement.scrollWidth || 0, document.body ? document.body.scrollWidth : 0);
+    var docH = Math.max(h, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
+    var clone = document.documentElement.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    inlineSnapshotStyles(document.documentElement, clone);
+    var scroll = scrollOffset();
+    var cloneBody = clone.querySelector('body');
+    var rootStyle = clone.getAttribute('style') || '';
+    var bodyStyle = cloneBody ? cloneBody.getAttribute('style') || '' : '';
+    var bodyContent = cloneBody ? cloneBody.innerHTML : clone.innerHTML;
+    var wrapperStyle = rootStyle + bodyStyle +
+      'margin:0;position:relative;left:' + (-scroll.x) + 'px;top:' + (-scroll.y) + 'px;' +
+      'width:' + docW + 'px;height:' + docH + 'px;overflow:visible;';
+    var html = '<div xmlns="http://www.w3.org/1999/xhtml" style="' + escapeAttribute(wrapperStyle) + '">' + bodyContent + '</div>';
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<foreignObject x="0" y="0" width="' + docW + '" height="' + docH + '">' +
+      html +
+      '</foreignObject></svg>';
+    var img = new Image();
+    img.onload = function(){
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.floor(w * dpr));
+        canvas.height = Math.max(1, Math.floor(h * dpr));
+        var ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no 2d context');
+        ctx.scale(dpr, dpr);
+        ctx.drawImage(img, 0, 0, w, h);
+        window.parent.postMessage({ type: 'od:snapshot:result', id: id, dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height }, '*');
+      } catch (err) {
+        window.parent.postMessage({ type: 'od:snapshot:result', id: id, error: String(err && err.message || err) }, '*');
+      }
+    };
+    function encodedSvgDataUrl(){
+      var encoded = encodeURIComponent(svg);
+      return 'data:image/svg+xml;charset=utf-8,' + encoded;
+    }
+    img.onerror = function(){
+      window.parent.postMessage({ type: 'od:snapshot:result', id: id, error: 'snapshot image failed' }, '*');
+    };
+    img.src = encodedSvgDataUrl();
+  }
+  window.addEventListener('message', function(ev){
+    var data = ev && ev.data;
+    if (!data || data.type !== 'od:snapshot' || !data.id) return;
+    waitForImages().then(function(){ renderSnapshot(String(data.id)); });
+  });
+})();</script><script data-od-srcdoc-transport-activation="">(function(){
+  window.addEventListener('message', function(ev){
+    var data = ev && ev.data;
+    if (!data || data.type !== 'od:srcdoc-transport-activate' || typeof data.html !== 'string') return;
+    document.open();
+    document.write(data.html);
+    document.close();
+  });
+})();</script></body></html>
